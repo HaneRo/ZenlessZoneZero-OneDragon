@@ -15,6 +15,7 @@ class CloudGameQueue(ZOperation):
 
     def __init__(self, ctx: ZContext):
         ZOperation.__init__(self, ctx, op_name=gt('云游戏排队'))
+        self._queue_info_empty_count = 0  # 连续未识别到排队信息计数器
 
     @node_from(from_name='画面识别', status='国服PC云-点击空白区域关闭')
     @operation_node(name='画面识别', node_max_retry_times=60, is_start_node=True)
@@ -89,6 +90,17 @@ class CloudGameQueue(ZOperation):
 
         # 将识别到的值通过log输出
         log.info(f"国服PC云排队信息 - 排队人数: {queue_count_text}, 预计等待时间: {wait_time_text}分钟")
+
+        # 检查排队信息是否均为空
+        if not queue_count_text and not wait_time_text:
+            self._queue_info_empty_count += 1
+        else:
+            self._queue_info_empty_count = 0
+
+        # 连续3次均未识别到排队信息，返回失败
+        if self._queue_info_empty_count >= 3:
+            self._queue_info_empty_count = 0
+            return self.round_fail(status='未找到排队信息', wait=1)
 
         # 检查是否能识别到"点击进入游戏"区域
         enter_game_result = self.round_by_find_area(self.last_screenshot, '打开游戏', '点击进入游戏')
